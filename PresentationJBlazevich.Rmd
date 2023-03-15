@@ -1,0 +1,153 @@
+---
+title: 'Linkedin Jobs'
+subtitle: 'Product Manager vs. Business Analyst Keyword Skills Analysis'
+author: "By: Jordan Blazevich"
+date: "On: April 13, 2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading Mapping Libraries and Data
+
+### Loading Libraries: 
+
+```{r load-libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(knitr)
+library(lubridate)
+library(ggrepel)
+library(stopwords)
+library(ggplot2)
+library(ggforce)
+library(tibble)
+library(ggdark)
+```
+
+
+### Loading & Transforming Data
+
+```{r load-data, message=FALSE, warning=FALSE}
+job_data <- read_csv("jobs.csv")
+
+## What words should we ignore for our keyword analysis?
+stop_words <- c('a', 'and', 'for', 'the', 'of', 'we', 'to', 'in', "with", "you", "our", "is", "are", "as", "or", "de", "on", "that", "will", "an", "be", "your", "et", "this", "at", "From", "by", "all", "have", "new", "more", "des", "their", "there", "theyre", "us", "la", "à", "les", "it", "do", "can", "were", "if", "en", "has", "any", "use", "youll", "well", "du", "dans", "how", "but", "pour", "un", "like", "experience", "work", "from", "skills", "working", "ability", "business", "product", "analysis", "including", "role", "make", "company", "help", "across", "strong", "processes", "teams", "opportunity", "years", "knowledge", "information", "products", "job", "analyst", "needs", "customers", "manager", "people", "required", "provide", "platform", "system", "ensure", "develop", "within", "projects", stopwords("en"))
+
+## Lets get an ordered list of the top 20 common keywords for Business Analysis
+ba_data <- job_data %>%
+  filter(Query == "Business Analyst") %>%
+  mutate(descrp = tolower(Description)) %>%
+  mutate(descrp = str_remove_all(descrp, '[[:punct:]]')) %>%
+  mutate(tokens = str_split(descrp, "\\s+")) %>%
+  unnest(cols = c(tokens)) %>% 
+  count(tokens) %>% 
+  filter(!tokens %in% stop_words) %>% 
+  mutate(job = "Business Analyst") %>%
+  mutate(tokens = str_to_title(tokens)) %>%
+  arrange(desc(n)) %>%
+  top_n(20, n)
+
+## Lets get an ordered list of the top 20 common keywords for Product Manager
+pm_data <- job_data %>%
+  filter(Query == "Product Manager") %>%
+  mutate(descrp = tolower(Description)) %>%
+  mutate(descrp = str_remove_all(descrp, '[[:punct:]]')) %>%
+  mutate(tokens = str_split(descrp, "\\s+")) %>%
+  unnest(cols = c(tokens)) %>% 
+  count(tokens) %>% 
+  filter(!tokens %in% stop_words) %>% 
+  mutate(job = "Product Manager") %>%
+  mutate(tokens = str_to_title(tokens)) %>%
+  arrange(desc(n)) %>%
+  top_n(20, n)
+```
+
+## Transform Data for the Parrallel Set Plot
+
+```{r get-data-ready, message=FALSE, warning=FALSE}
+## The data needs to Look like this in order to be used in a parallel set plot:
+## | Job | Keyword | x            | y                | value | id |
+## | job | keyword | Job analysed | Keyword analysed | n     | id |
+
+# (Search ?geom_parallel_sets() in your console for more information)
+# (Example link: https://odsc.medium.com/parallel-plots-for-visualizing-relationships-with-ggplot2-and-ggforce-eac1c462d9b8)
+
+## I am combining the data into one frame to dump it into a csv to format manually
+all_data <- rbind(pm_data, ba_data)
+
+transform_data <- 
+  full_join(pm_data, ba_data, by = c("tokens" = "tokens")) 
+
+write.csv(transform_data,"transformed.csv", row.names = TRUE)
+
+## I did the below to analyze the order, for how I should display things in the visualization
+new_order3 <- transform_data %>%
+  mutate(numPM = n.x / n.y) %>%
+  mutate(numBA = n.y / n.x) %>%
+  arrange(desc(numPM), desc(numBA))
+```
+
+
+
+## Build Parallel Sets Visualization
+
+```{r build-vis, message=FALSE}
+## Load in my manually transformed
+parallel_data <- read_csv("parallel_data.csv")
+
+## I need to manually reorder how things are going to be displayed, R defaults to alphabetical and that sucks for what I need.
+parallel_data$y <- factor(parallel_data$y, levels=c("Customer", "Strategy", "Build", "Market", "Engineering", "Software", "Roadmap",
+                                                    "Success", "Team", "Development", "User", "Design", "Technical", "Management",
+                                                    "Environment", "Technology", "Solutions", "Data", "Support", "Requirements",
+                                                    "Opportunities", "Communication", "Clients", "Services", "Stakeholders", "Systems",
+                                                    "Process", "Project", "Product Manager", "Business Analyst"))
+
+## Now its time to parallel plot!
+plot2 <- ggplot(
+  parallel_data, aes(x, id = id, split = y, value = value)) +
+  geom_parallel_sets(aes(fill = Job), alpha = 0.6, axis.width = 0.1, show.legend = FALSE) +
+  geom_parallel_sets_axes(axis.width = 0.1, fill ="black") +
+  geom_parallel_sets_labels(colour = 'white', angle = 360, size = 3.7, hjust = "outward", face="bold") +
+  scale_fill_brewer(palette="Set1") +
+  scale_x_discrete(
+    expand = expansion(mult=0.3)
+  ) +
+  labs(x = NULL, 
+       y = NULL,
+       title = "LinkedIn Keyword Analysis",
+       subtitle = "Product Manager vs Business Analyst",
+       caption = "Source: LinkedIn Job Postings | By: Jordan Blazevich") +
+  ## Below is my custom styling, how I made the plot look nicer
+  theme_few(base_family = "", base_size = 14) +
+  theme(plot.title = element_text(face="bold", family = "", colour = "white", hjust = 0.5, size = 25, 
+                                   margin = margin(t = 10, r = 0, b = 10, l = 0, unit = "pt")),
+        plot.subtitle = 
+           element_text(family = "", colour = "white", hjust = 0.5, size = 14, 
+                        margin = margin(t = 0, r = 0, b = 10, l = 0, unit = "pt")),
+        plot.caption = 
+           element_text(face="italic", family = "", colour = "white", 
+                        margin = margin(t = 20, r = 15, b = 5, l = 0, unit = "pt")),
+        plot.background = element_rect(fill = "grey10"),
+        panel.background = element_blank(),
+        legend.background = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x = element_text(face="bold", family = "", colour = "white"),
+        axis.text.y = element_blank(),
+        strip.text.x = element_text(family = "", colour = "black", hjust = 0.5, size = 14),
+        legend.key = element_blank(),
+        legend.position = c(0.815, 0.27))
+
+plot(plot2)
+```
+
+
+
+
+```{r print}
+## This is how I pushed to a pdf
+ggsave("jobPlot2.pdf", height = 9, width = 16, units = "in")
+```
+
